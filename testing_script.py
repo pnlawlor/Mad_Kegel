@@ -9,6 +9,6 @@ X_data = np.random.rand(200,200)
 y_data2 = np.round(X_data[:,0])
 y_data = y_data2.ravel()
 
-models, scores, C, kf = fit_logistic_GLM(X_data, y_data,num_cv=5,verbose=True,reg_strength=1)
+models, scores, C, kf = fit_logistic_GLM(X_data, y_data,num_cv=5,verbose=True)
 
 plot_logistic_fit(models,X_data,kf)
