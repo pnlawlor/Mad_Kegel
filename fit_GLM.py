@@ -148,8 +148,8 @@ def fit_RF(X,y,
     importances = []
     clf_temp = RF(n_estimators = num_estimators, 
              n_jobs = 1, 
-             verbose = verbose,
-             compute_importances = True)
+             verbose = verbose)#,
+#              compute_importances = True)
     for train, test in kf2:
         X_train, X_test, y_train, y_test = X[train], X[test], y[train], y[test]
         clf_temp.fit(X_train,y_train)
