@@ -55,14 +55,11 @@ def rawEdgesFromGames(data):
                  + [(data[i][4],data[i][2],winnerP)])
     return edges
 
-def avgDupeEdges(G):
-    return G
-
 def buildGraph(data):
     G = nx.MultiDiGraph()
     G.add_nodes_from(getTeams(data))
     G.add_weighted_edges_from(rawEdgesFromGames(data))
-    normG = normEdges(avgDupeEdges(G))
+    normG = normEdges(G)
     return normG
 
 def selectOutNode(edges):
@@ -101,7 +98,7 @@ def main():
     teamfName = "C:/Users/Ted/Dropbox/Kording Lab/Projects/MarchMadness/Data/teams.csv"
     tournfName = "C:/Users/Ted/Dropbox/Kording Lab/Projects/MarchMadness/Data/tourney_results.csv"
     
-    season = 'R'
+    season = 'A'
     games = [game for game in loadResults(resName) if game[0]==season]
     G = buildGraph(games)
     
