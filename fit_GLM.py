@@ -12,6 +12,7 @@ from sklearn.grid_search import GridSearchCV as GSCV
 from scipy.stats.mstats import gmean
 import matplotlib.pyplot as plot
 from scipy.stats import logistic
+import sklearn.preprocessing as pp
 
 #===============================================================================
 # Fit logistic GLM
@@ -26,6 +27,7 @@ def fit_logistic_GLM(X, y,
                      plot_results = False
                      ):
     scores_to_return = []
+    X = pp.scale(X)
     # If regularization strength isn't specified, CV to find it
     if reg_strength == None:
         kf = KFold(y = y, n_folds = num_cv)
@@ -83,7 +85,7 @@ def plot_logistic_fit(models, data, CV_info,num_columns = 2):
     fig.tight_layout()
     axes = fig_temp[1]
     cv = 0
-
+    #
     for train,test in CV_info:
         row_n = int(np.ceil(cv/num_columns))
         col_n = int(np.mod(float(cv),float(num_columns)))
@@ -114,6 +116,7 @@ def fit_RF(X,y,
            verbose = False,
            plot_importance = False,
            num_cv = 5):
+    X = pp.scale(X)
     # If num_estimators not provided, CV to estimate it
     if num_estimators == None:
         kf = KFold(y = y, n_folds = num_cv)
