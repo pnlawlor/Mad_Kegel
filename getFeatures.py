@@ -119,9 +119,7 @@ def getWLDiff(data,t1,t2):
         return "NA"
     else:
         return ptDiffT1/float(nGames)
-        
     
-
 def main():
     dbHeader = "C:/Users/Ted/Dropbox"
     rsfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
