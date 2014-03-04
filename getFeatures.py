@@ -102,6 +102,23 @@ def getWL(data,t1,t2):
         return "NA"
     else:
         return nT1Win/float(nGames)
+    
+def getWLDiff(data,t1,t2):
+    games = selTeamGames(selTeamGames(data,t1),t2)
+    nGames = len(games)
+    ptDiffT1 = 0
+    if int(t1)<int(t2):
+        for game in games:
+            if game[2] == t1:
+                ptDiffT1 += int(game[3]) - int(game[5])
+            else:
+                ptDiffT1 -= int(game[3]) - int(game[5])
+    else:
+        print "teams in wrong order."
+    if nGames == 0:
+        return "NA"
+    else:
+        return ptDiffT1/float(nGames)
         
     
 
@@ -109,9 +126,10 @@ def main():
     dbHeader = "C:/Users/Ted/Dropbox"
     rsfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
     teamfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/teams.csv"
-    ofName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/features.csv"
+    trainName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/features_D.csv"
+    featName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/all_D.csv"
     
-    season = 'R'
+    season = 'D'
     games = [game for game in loadResults(rsfName) if game[0]==season]
     
     tIDs = sorted(getTIDs(games))
@@ -121,14 +139,15 @@ def main():
     for id in tIDs:
         tData[id] = getFeatureVector(games,id)
         
-    of = open(ofName,'wb')
+    of = open(trainName,'wb')
     featfile = csv.writer(of)
     for i in range(nTeams):
         for j in range(i+1,nTeams):
             id_string = "{0}_{1}_{2}".format(season,tIDs[i],tIDs[j])
             if j == i+1:
                 print id_string
-            featfile.writerow([id_string]+tData[tIDs[i]]+tData[tIDs[j]]+[getWL(games,tIDs[i],tIDs[j])])
+            if getWL(games,tIDs[i],tIDs[j])!="NA":
+                featfile.writerow([id_string]+tData[tIDs[i]]+tData[tIDs[j]]+[getWLDiff(games,tIDs[i],tIDs[j])])
     of.close()
     
     
