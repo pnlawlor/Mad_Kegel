@@ -125,6 +125,17 @@ def sigmoid(x,k):
     y = 1/(1+np.exp(-k*(x)))
     return y
 
+def lossFx(yTrue,scoreDiff):
+    k = 0.19
+#    
+    pProb = sigmoid(scoreDiff,k)
+    pPred = scoreDiff>0
+    pPred = pPred.astype(int)
+#    
+    n = len(yTrue)
+    loss = (-1/n)*np.sum(yTrue*np.log(pProb)+(1-yTrue)*np.log(1-pProb))
+    return loss
+
 def main():
     dbHeader = "C:/Users/Ted/Dropbox"
     rsfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
