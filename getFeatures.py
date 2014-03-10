@@ -11,16 +11,13 @@ import random
 import numpy as np
 from collections import Counter
 import matplotlib.pyplot as plt
+import pandas as pd
 
 # General Maintenance Functions
 
 def loadResults(rfName):
-    results = []
     with open(rfName,'rb') as ifile:
-        f = csv.reader(ifile)
-        header = f.next()
-        for row in f:
-            results.append(row)
+        results = pd.io.parsers.read_csv(ifile)
     return results
 
 def loadTeamNames(tfName):
@@ -119,33 +116,38 @@ def getWLDiff(data,t1,t2):
         return "NA"
     else:
         return ptDiffT1/float(nGames)
-    
+
+
+
 def main():
     dbHeader = "C:/Users/Ted/Dropbox"
     rsfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
     teamfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/teams.csv"
-    trainName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/features_D.csv"
-    featName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/all_D.csv"
+    trainName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/features_all.csv"
     
-    season = 'D'
-    games = [game for game in loadResults(rsfName) if game[0]==season]
+    seasons = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R']
+    allData = loadResults(rsfName)
     
-    tIDs = sorted(getTIDs(games))
-    names = loadTeamNames(teamfName)
-    nTeams = len(tIDs)
-    tData = {}
-    for id in tIDs:
-        tData[id] = getFeatureVector(games,id)
-        
     of = open(trainName,'wb')
     featfile = csv.writer(of)
-    for i in range(nTeams):
-        for j in range(i+1,nTeams):
-            id_string = "{0}_{1}_{2}".format(season,tIDs[i],tIDs[j])
-            if j == i+1:
-                print id_string
-            if getWL(games,tIDs[i],tIDs[j])!="NA":
-                featfile.writerow([id_string]+tData[tIDs[i]]+tData[tIDs[j]]+[getWLDiff(games,tIDs[i],tIDs[j])])
+    
+    for season in seasons:
+        print "Season: "+season
+        games = [game for game in allData if game[0]==season]
+        tIDs = sorted(getTIDs(games))
+#        names = loadTeamNames(teamfName)
+        nTeams = len(tIDs)
+        tData = {}
+        for id in tIDs:
+            tData[id] = getFeatureVector(games,id)
+            for i in range(nTeams):
+                for j in range(i+1,nTeams):
+                    id_string = "{0}_{1}_{2}".format(season,tIDs[i],tIDs[j])
+                    if j == i+1:
+                        print id_string
+                        if getWL(games,tIDs[i],tIDs[j])!="NA":
+                            featfile.writerow([id_string] + tData[tIDs[i]] +
+                                tData[tIDs[j]] + [getWLDiff(games,tIDs[i],tIDs[j])])
     of.close()
     
     
