@@ -4,48 +4,42 @@ Created on Jan 24, 2014
 @author: Ted
 '''
 
-import networkx as nx
-import csv
-from sets import Set
-import random
 import numpy as np
-from collections import Counter
-import matplotlib.pyplot as plt
 import pandas as pd
 
-# General Maintenance Functions
-
-def loadResults(rfName):
-    with open(rfName,'rb') as ifile:
-        results = pd.io.parsers.read_csv(ifile)
-    return results
-
-def loadTeamNames(tfName):
-    names = {}
-    with open(tfName,'rb') as ifile:
-        f = csv.reader(ifile)
-        header = f.next()
-        for row in f:
-            names[row[0]] = row[1]
-    return names
+#==============================================================================
+# General Data Manipulation Functions
+#==============================================================================
 
 def selTeamGames(data,team):
-    return [x for x in data if (x[2] == team or x[4] == team)]
+    is_winner = data['wteam'] == team
+    is_loser = data['lteam'] == team
+    return data[is_winner | is_loser]
 
-def getTIDs(data):
-    return list(Set([x[2] for x in data] + [x[4] for x in data]))
+def getOpponents(data,team):
+    tGames = selTeamGames(data,team)
+    # find teams that were in TEAM's games but not TEAM
+    notWin = tGames[tGames['wteam'] != team]['wteam']
+    notLose = tGames[tGames['lteam'] != team]['lteam']
+    return np.concatenate((notWin.values,notLose.values))
 
-def flatten(l):
-    return [x for v in l for x in v]
-
-# Feature Functions
+#==============================================================================
+# Win Percent Calculation Code
+#==============================================================================
 
 def winPct(data,team,startFrac,endFrac):
+    # Calculates win percent during a particular part of the season
+    # First selects games for a particular team, then calculates #games in range
     tGames = selTeamGames(data,team)
     gameRange = [int(len(tGames)*startFrac),int(len(tGames)*endFrac)]
     nGames = float(gameRange[1]-gameRange[0])
-    winN = len([x for x in tGames[gameRange[0]:gameRange[1]+1] if x[2] == team])
-    return winN/nGames  
+    # Calculates number of games won
+    gamesWon = tGames.iloc[range(*gameRange)]['wteam'].value_counts()
+    if team in gamesWon.keys():
+        winN = gamesWon[team]
+    else:
+        winN = 0
+    return winN/nGames
 
 def winEarly(data,team):
     return winPct(data,team,0,0.33)
@@ -55,16 +49,22 @@ def winMid(data,team):
 
 def winLate(data,team):
     return winPct(data,team,0.67,1)
+    
+#==============================================================================
+# Other Assorted Single-Team Features
+#==============================================================================
 
 def pointsFor(data,team):
     tGames = selTeamGames(data,team)
-    return ([int(x[3]) for x in tGames if x[2] == team] + 
-            [int(x[5]) for x in tGames if x[4] == team])
+    pf = tGames[tGames['wteam'] == team]['wscore'].append(
+                tGames[tGames['lteam'] == team]['lscore'])
+    return pf
 
 def pointsAgainst(data,team):
     tGames = selTeamGames(data,team)
-    return ([int(x[3]) for x in tGames if x[4] == team] + 
-            [int(x[5]) for x in tGames if x[2] == team])
+    pa = tGames[tGames['wteam'] == team]['lscore'].append(
+                tGames[tGames['lteam'] == team]['wscore'])
+    return pa
 
 def ppg(data,team):
     return np.mean(pointsFor(data,team))
@@ -80,76 +80,91 @@ def pfstd(data,team):
 
 def pastd(data,team):
     return np.std(pointsAgainst(data,team))
+    
+#==============================================================================
+# Generate Single-Team Feature Vector
+#==============================================================================
 
 def getFeatureVector(data,t):
     return [winEarly(data,t), winMid(data,t), winLate(data,t), ppg(data,t), ppga(data,t), diffpg(data,t),
                     pfstd(data,t)*-1*np.sign(diffpg(data,t)),pastd(data,t)*-1*np.sign(diffpg(data,t))]
+                    
+#==============================================================================
+# Generate Interaction Terms
+#==============================================================================
     
 def getWL(data,t1,t2):
     games = selTeamGames(selTeamGames(data,t1),t2)
     nGames = len(games)
-    nT1Win = 0
-    if int(t1)<int(t2):
-        for game in games:
-            if game[2] == t1:
-                nT1Win+=1
-    else:
-        print "teams in wrong order."
     if nGames == 0:
         return "NA"
     else:
+        gamesWon = games['wteam'].value_counts()
+        if t1 in gamesWon.keys():
+            nT1Win = gamesWon[t1]
+        else:
+            nT1Win = 0
         return nT1Win/float(nGames)
     
 def getWLDiff(data,t1,t2):
     games = selTeamGames(selTeamGames(data,t1),t2)
     nGames = len(games)
-    ptDiffT1 = 0
-    if int(t1)<int(t2):
-        for game in games:
-            if game[2] == t1:
-                ptDiffT1 += int(game[3]) - int(game[5])
-            else:
-                ptDiffT1 -= int(game[3]) - int(game[5])
-    else:
-        print "teams in wrong order."
     if nGames == 0:
         return "NA"
     else:
+        ptDiffT1 = diffpg(games,t1)
         return ptDiffT1/float(nGames)
 
+#==============================================================================
+# Data Generator Functions
+#==============================================================================
+        
+def regSeasFeatures(games,season,featfile):
+    # Get list of all teams in season, sort them.
+    tIDs = sorted(pd.unique(games[['wteam','lteam']].values.ravel()))
+    tData = {}
+    for id in tIDs:
+        tData[id] = getFeatureVector(games,id)
+    for t1 in tIDs:
+        opps = getOpponents(games,t1)
+        for t2 in np.unique(opps[opps>t1]):
+            id_string = "{0}_{1}_{2}".format(season,str(t1),str(t2))
+            featfile.writerow([id_string] + tData[t1] + tData[t2])
 
+
+    
+#==============================================================================
+# Main code to execute
+#==============================================================================
 
 def main():
     dbHeader = "C:/Users/Ted/Dropbox"
-    rsfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
-    teamfName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/teams.csv"
-    trainName = dbHeader + "/Kording Lab/Projects/MarchMadness/Data/features_all.csv"
+    projHeader = "/Kording Lab/Projects/MarchMadness
+    rsfName = dbHeader + projHeader + "/Data/regular_season_results.csv"
+    teamfName = dbHeader + projHeader + "/Data/teams.csv"
+    trainName = dbHeader + projHeader + "/Data/features_all.csv"
+    tourneyName = dbHeader + projHeader + "/Data/tourney_results.csv"
+    tourneyTrainName = dbHeader + projHeader + "/Data/tourneyFeatures_all.csv"
     
     seasons = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R']
-    allData = loadResults(rsfName)
+    allData = pd.read_csv(rsfName)
+#    tournData = pd.read_csv(tourneyName)
+    names = pd.read_csv(teamfName)['name'].to_dict()
+#    allExpDiff = "REPLACE WITH PATS DATA"
+#    allSeeds = "READ IN SEEDS"
     
     of = open(trainName,'wb')
     featfile = csv.writer(of)
+#    otf = open(tournTrainName,'wb')
+#    tournfeatfile = csv.writer(otf)
     
     for season in seasons:
         print "Season: "+season
-        games = [game for game in allData if game[0]==season]
-        tIDs = sorted(getTIDs(games))
-#        names = loadTeamNames(teamfName)
-        nTeams = len(tIDs)
-        tData = {}
-        for id in tIDs:
-            tData[id] = getFeatureVector(games,id)
-            for i in range(nTeams):
-                for j in range(i+1,nTeams):
-                    id_string = "{0}_{1}_{2}".format(season,tIDs[i],tIDs[j])
-                    if j == i+1:
-                        print id_string
-                        if getWL(games,tIDs[i],tIDs[j])!="NA":
-                            featfile.writerow([id_string] + tData[tIDs[i]] +
-                                tData[tIDs[j]] + [getWLDiff(games,tIDs[i],tIDs[j])])
+        # Find all games that were played this season
+        games = allData[allData['season'] == season]
+#        tournGames = tournData[tournData['season'] == season]
+#        expDiff = allExpDiff[allExpDiff['season'] == season]
+        regSeasFeatures(games,season,of)
+#        tourneyFeatures(tournGames,games,expDiff,seeds)
     of.close()
-    
-    
-    
-    
+    otf.close()
