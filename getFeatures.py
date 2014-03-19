@@ -227,7 +227,7 @@ def main():
     
 #    Generate Files for All Seasons
     of = open(trainName,'wb')
-    featfile = csv.writer(of)  
+    featfile = csv.writer(of)
     for season in seasons:
         print "Season: "+season
         # Find all games that were played this season
