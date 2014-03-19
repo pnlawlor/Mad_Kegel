@@ -6,32 +6,42 @@ Created on Jan 21, 2014
 
 import networkx as nx
 import csv
-from sets import Set
 import random
 import numpy as np
-from collections import Counter
+import pandas as pd
 import matplotlib.pyplot as plt
 
-def loadResults(rfName):
-    results = []
-    with open(rfName,'rb') as ifile:
-        f = csv.reader(ifile)
-        header = f.next()
-        for row in f:
-            results.append(row)
-    return results
-
-def loadTeamNames(tfName):
-    names = {}
-    with open(tfName,'rb') as ifile:
-        f = csv.reader(ifile)
-        header = f.next()
-        for row in f:
-            names[row[0]] = row[1]
-    return names
+#==============================================================================
+# Maintenance Code
+#==============================================================================
 
 def getTeams(data):
-    return list(Set([x[2] for x in data] + [x[4] for x in data]))
+    # Returns list of unique teams in data
+    return sorted(pd.unique(data[['wteam','lteam']].values.ravel()))
+
+#==============================================================================
+# Graph Initialization Code
+#==============================================================================
+
+def buildGraph(data):
+    # Builds a graph with teams connected by games they played
+    G = nx.MultiDiGraph()
+    G.add_nodes_from(getTeams(data))
+    G.add_weighted_edges_from(rawEdgesFromGames(data))
+    normG = normEdges(G)
+    return normG
+    
+def rawEdgesFromGames(data):
+    localData = data.copy()
+    localData['diffs'] = data['wscore'] - data['lscore']
+    maxDiff = max(localData['diffs'])
+    edges = [] 
+    for i in range(len(data)):
+        game = localData.iloc[i]
+        winnerP = diffToP(game['diffs'],maxDiff)
+        edges = (edges + [(game['wteam'],game['lteam'],(1-winnerP))]
+                 + [(game['lteam'],game['wteam'],winnerP)])
+    return edges
 
 def diffToP(diff,maxDiff):
     #Assume we get sent the winning diff
@@ -44,23 +54,10 @@ def normEdges(G):
         for edge in normG.out_edges(node,True,True):
             normG[node][edge[1]][edge[2]]['weight'] /= normWeight
     return normG
-
-def rawEdgesFromGames(data):
-    edges = []
-    diffs = [float(x[3])-float(x[5]) for x in data]
-    maxDiff = max(diffs)
-    for i in range(len(data)):
-        winnerP = diffToP(diffs[i],maxDiff)
-        edges = (edges + [(data[i][2],data[i][4],(1-winnerP))]
-                 + [(data[i][4],data[i][2],winnerP)])
-    return edges
-
-def buildGraph(data):
-    G = nx.MultiDiGraph()
-    G.add_nodes_from(getTeams(data))
-    G.add_weighted_edges_from(rawEdgesFromGames(data))
-    normG = normEdges(G)
-    return normG
+    
+#==============================================================================
+# Random Walk Code
+#==============================================================================
 
 def selectOutNode(edges):
     # Expects output of G.out_edges(node,False,True), i.e. no keys
@@ -83,45 +80,41 @@ def randomWalk(G,n):
         currentNode = selectOutNode(edges)
         i+=1
     return counts
-
-def predictGames(data,cts):
-    correct = 0.0
-    for game in data:
-        tw = game[2]
-        tl = game[4]
-        if cts[tw] > cts[tl]:
-            correct += 1
-    return correct/len(data)
+    
+#==============================================================================
+# Main Code
+#==============================================================================
 
 def main():
-    resName = "C:/Users/Ted/Dropbox/Kording Lab/Projects/MarchMadness/Data/regular_season_results.csv"
-    teamfName = "C:/Users/Ted/Dropbox/Kording Lab/Projects/MarchMadness/Data/teams.csv"
-    tournfName = "C:/Users/Ted/Dropbox/Kording Lab/Projects/MarchMadness/Data/tourney_results.csv"
+    dbHeader = "C:/Users/Ted/Dropbox"
+    projHeader = "/Kording Lab/Projects/MarchMadness"
+    rsfName = dbHeader + projHeader + "/Data/regular_season_results.csv"
+    teamfName = dbHeader + projHeader + "/Data/teams.csv"
+    tourneyName = dbHeader + projHeader + "/Data/tourney_results.csv"
+    walkName = dbHeader + projHeader + "/Data/walk.csv"
     
-    season = 'A'
-    games = [game for game in loadResults(resName) if game[0]==season]
-    G = buildGraph(games)
+    seasons = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S']
+    nsteps = 100000000
     
-    # Plot the graph
-    nx.draw(G)
-    plt.show()
-
-    # Walk the dinosaur
-    nsteps = 1000000
-    cts = randomWalk(G,nsteps)
+    allData = pd.read_csv(rsfName)
+#    names = pd.read_csv(teamfName)['name'].to_dict()
+    names = pd.read_csv(teamfName)
     
-    # Print rankings... or some other evaluation?
-    rankings = sorted(cts,key=cts.get,reverse=True)
-    names = loadTeamNames(teamfName)
-    numTeams = 25
-    for i in range(numTeams):
-        team = rankings[i]
-        print "{0}: {1}".format(i+1,names[team])
-        
-    # Evaluate on tourney data
-    tourney = [game for game in loadResults(tournfName) if game[0]==season]
-    print predictGames(tourney,cts)
-
+    of = open(walkName,'wb')
+    owrite = csv.writer(of)
+    owrite.writerow(['team','season','rank'])
+    
+    for season in seasons:
+        print "Season: "+season
+        games = allData[allData['season'] == season]
+        G = buildGraph(games)
+        tempCts = randomWalk(G,nsteps)
+        sortCts = sorted(tempCts,key=tempCts.get,reverse=True)
+        for i in range(len(sortCts)):
+            owrite.writerow([sortCts[i],season,str(i)])
+    
+    of.close()
+            
 
 if __name__ == "__main__":
     main()

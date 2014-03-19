@@ -6,6 +6,9 @@ Created on Jan 24, 2014
 
 import numpy as np
 import pandas as pd
+import cPickle as cp
+from sklearn import preprocessing as pp
+import csv
 
 #==============================================================================
 # General Data Manipulation Functions
@@ -40,6 +43,13 @@ def winPct(data,team,startFrac,endFrac):
     else:
         winN = 0
     return winN/nGames
+    
+def AwinPct(data,team):
+    tGames = selTeamGames(data,team)
+    wAGames = len(tGames[(tGames['wteam'] == team) & (tGames['wloc'] != 'H')])
+    lAGames = len(tGames[(tGames['lteam'] == team) & (tGames['wloc'] != 'A')])
+    nGames = wAGames + lAGames
+    return float(wAGames)/nGames
 
 def winEarly(data,team):
     return winPct(data,team,0,0.33)
@@ -50,17 +60,22 @@ def winMid(data,team):
 def winLate(data,team):
     return winPct(data,team,0.67,1)
     
+def winRLate(data,team):
+    return winPct(data,team,0.84,1)    
+    
 #==============================================================================
 # Other Assorted Single-Team Features
 #==============================================================================
 
 def pointsFor(data,team):
+    # helper fx, generates vector of points for team over all games
     tGames = selTeamGames(data,team)
     pf = tGames[tGames['wteam'] == team]['wscore'].append(
                 tGames[tGames['lteam'] == team]['lscore'])
     return pf
 
 def pointsAgainst(data,team):
+    # helper fx, generates vector of points for team over all games
     tGames = selTeamGames(data,team)
     pa = tGames[tGames['wteam'] == team]['lscore'].append(
                 tGames[tGames['lteam'] == team]['wscore'])
@@ -82,12 +97,50 @@ def pastd(data,team):
     return np.std(pointsAgainst(data,team))
     
 #==============================================================================
+# Single-team Tournament Feature Generators
+#==============================================================================
+    
+def getSeed(seeds,id):
+    return int(seeds[seeds['team'] == id]['seed'])
+    
+#==============================================================================
+# Tournament Interaction Feature Generator
+#==============================================================================
+
+def getFeatFromGame(g,data):
+    t1 = g['wteam']
+    t2 = g['lteam']
+    season = g['season']
+    games = data[data['season'] == season]
+    return getFeatureVector(games,t1) + getFeatureVector(games,t2)
+
+def featWrapper(data):
+    return lambda x: getFeatFromGame(x,data)
+
+def getFeatArray(tourn,data):
+    #takes all tourneys, all seasons, generates feat vectors for each matchup
+    feats = pd.DataFrame()
+    feats['wteam'] = tourn['wteam']
+    feats['lteam'] = tourn['lteam']
+    feats['season'] = tourn['season']
+    feats['vectors'] = pp.scale(np.array(tourn.apply(featWrapper(data),axis=1).tolist())).tolist()
+    return feats
+
+def getPredDiff(feats,t1,t2,season,model):
+    gameIdx = ((feats['wteam'] == t1) | (feats['lteam'] == t1)) & ((feats['wteam'] == t2) | (feats['lteam'] == t2)) & (feats['season'] == season)
+    fVector = feats[gameIdx]['vectors'].iloc[0]
+    print fVector
+    return model.predict(fVector)
+
+#==============================================================================
 # Generate Single-Team Feature Vector
 #==============================================================================
 
 def getFeatureVector(data,t):
-    return [winEarly(data,t), winMid(data,t), winLate(data,t), ppg(data,t), ppga(data,t), diffpg(data,t),
-                    pfstd(data,t)*-1*np.sign(diffpg(data,t)),pastd(data,t)*-1*np.sign(diffpg(data,t))]
+    return [winEarly(data,t), winMid(data,t), winLate(data,t), winRLate(data,t),
+            AwinPct(data,t), ppg(data,t), ppga(data,t), diffpg(data,t), 
+            pfstd(data,t)*-1*np.sign(diffpg(data,t)),
+            pastd(data,t)*-1*np.sign(diffpg(data,t))]
                     
 #==============================================================================
 # Generate Interaction Terms
@@ -129,9 +182,22 @@ def regSeasFeatures(games,season,featfile):
         opps = getOpponents(games,t1)
         for t2 in np.unique(opps[opps>t1]):
             id_string = "{0}_{1}_{2}".format(season,str(t1),str(t2))
-            featfile.writerow([id_string] + tData[t1] + tData[t2])
+            featfile.writerow([id_string] + tData[t1] + tData[t2] + [getWLDiff(games,t1,t2)])
 
-
+def tourneyFeatures(tournGames,games,seeds,season,featArray,mod,tournfile):
+    tIDs = sorted(pd.unique(tournGames[['wteam','lteam']].values.ravel()))
+    nTeams = len(tIDs)
+    tData = {}
+    seed = {}
+    for id in tIDs:
+        tData[id] = getFeatureVector(games,id)
+        seed[id] = getSeed(seeds,id)
+    for t1 in tIDs:
+        opps = getOpponents(tournGames,t1)
+        for t2 in np.unique(opps[opps>t1]):
+            id_string = "{0}_{1}_{2}".format(season,str(t1),str(t2))
+            tournfile.writerow([id_string] + tData[t1] + tData[t2] +
+                    [seed[t1],seed[t2],getPredDiff(featArray,t1,t2,season,mod),getWLDiff(tournGames,t1,t2)])
     
 #==============================================================================
 # Main code to execute
@@ -139,32 +205,44 @@ def regSeasFeatures(games,season,featfile):
 
 def main():
     dbHeader = "C:/Users/Ted/Dropbox"
-    projHeader = "/Kording Lab/Projects/MarchMadness
+    projHeader = "/Kording Lab/Projects/MarchMadness"
     rsfName = dbHeader + projHeader + "/Data/regular_season_results.csv"
     teamfName = dbHeader + projHeader + "/Data/teams.csv"
     trainName = dbHeader + projHeader + "/Data/features_all.csv"
     tourneyName = dbHeader + projHeader + "/Data/tourney_results.csv"
+    tourneySeedName = dbHeader + projHeader + "/Data/tourney_seeds.csv"
     tourneyTrainName = dbHeader + projHeader + "/Data/tourneyFeatures_all.csv"
+    modName = dbHeader + projHeader + "/Data/all_seasons_model.pickle"
     
-    seasons = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R']
+    seasons = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S']
+    
+    # program is set up to accept things from kaggle's csv... don't break that.
     allData = pd.read_csv(rsfName)
-#    tournData = pd.read_csv(tourneyName)
+    tournData = pd.read_csv(tourneyName)
     names = pd.read_csv(teamfName)['name'].to_dict()
-#    allExpDiff = "REPLACE WITH PATS DATA"
-#    allSeeds = "READ IN SEEDS"
+    allSeeds = pd.read_csv(tourneySeedName)
+    allSeeds['seed'] = allSeeds['seed'].apply(lambda x: x[1:])
+    predMod = cp.load(open(modName))
+
+#   Pre-make scaled feature array for tournament games
+    featArray = getFeatArray(tournData,allData)
     
+#    Generate Files for All Seasons
     of = open(trainName,'wb')
-    featfile = csv.writer(of)
-#    otf = open(tournTrainName,'wb')
-#    tournfeatfile = csv.writer(otf)
-    
+    featfile = csv.writer(of)  
     for season in seasons:
         print "Season: "+season
         # Find all games that were played this season
         games = allData[allData['season'] == season]
-#        tournGames = tournData[tournData['season'] == season]
-#        expDiff = allExpDiff[allExpDiff['season'] == season]
-        regSeasFeatures(games,season,of)
-#        tourneyFeatures(tournGames,games,expDiff,seeds)
+        regSeasFeatures(games,season,featfile)
     of.close()
+    
+    otf = open(tourneyTrainName,'wb')
+    tournfeatfile = csv.writer(otf)
+    for season in seasons:
+        print "Tournament: "+season
+        games = allData[allData['season'] == season]
+        tournGames = tournData[tournData['season'] == season]
+        seeds = allSeeds[allSeeds['season'] == season]
+        tourneyFeatures(tournGames,games,seeds,season,featArray,predMod,tournfeatfile)
     otf.close()
