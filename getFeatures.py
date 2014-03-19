@@ -129,7 +129,6 @@ def getFeatArray(tourn,data):
 def getPredDiff(feats,t1,t2,season,model):
     gameIdx = ((feats['wteam'] == t1) | (feats['lteam'] == t1)) & ((feats['wteam'] == t2) | (feats['lteam'] == t2)) & (feats['season'] == season)
     fVector = feats[gameIdx]['vectors'].iloc[0]
-    print fVector
     return model.predict(fVector)
 
 #==============================================================================
@@ -221,8 +220,7 @@ def main():
     tournData = pd.read_csv(tourneyName)
     names = pd.read_csv(teamfName)['name'].to_dict()
     allSeeds = pd.read_csv(tourneySeedName)
-    allSeeds['seed'] = allSeeds['seed'].apply(lambda x: x[1:])
-    predMod = cp.load(open(modName))
+    allSeeds['seed'] = allSeeds['seed'].apply(lambda x: x[1:3])
 
 #   Pre-make scaled feature array for tournament games
     featArray = getFeatArray(tournData,allData)
@@ -236,6 +234,9 @@ def main():
         games = allData[allData['season'] == season]
         regSeasFeatures(games,season,featfile)
     of.close()
+    
+    # Wait for pat...
+    predMod = cp.load(open(modName))
     
     otf = open(tourneyTrainName,'wb')
     tournfeatfile = csv.writer(otf)
